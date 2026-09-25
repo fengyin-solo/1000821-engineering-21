@@ -1,12 +1,14 @@
-"""作业结算业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""作业结算业务规则：状态流转、字段校验、金额试算与筛选口径都收在这里。"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.services import billing
 from app.store import store
 
 MODULE = "settle"
 REQUIRED_FIELDS = ["结算单号", "结算对象", "结算周期"]
+TRIAL_FIELDS = ["作业量", "装卸单价", "港口费率", "减免"]
 STATUS_ORDER = ["待核对", "核对中", "已确认", "已收款", "有争议"]
 ACTION_RULES = {"发起核对": "核对中", "确认结算": "已收款", "标记争议": "有争议"}
 NEGATIVE_ACTIONS = []
@@ -45,6 +47,22 @@ class SettleService:
         entry["abnormal"] = False
         rows.append(entry)
         return entry, []
+
+    def trial(self, values: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+        """金额试算固定入口：不查库、不落数据，只按统一口径算一单。"""
+        missing = [field for field in TRIAL_FIELDS[:1] if not str(values.get(field) or "").strip()]
+        if missing:
+            return None, f"缺少必填字段：{'、'.join(missing)}"
+        try:
+            result = billing.calculate(values)
+        except ValueError as exc:
+            return None, str(exc)
+        result["待收金额"] = billing.outstanding({**values, "应收金额": result["应收金额"]})
+        return result, ""
+
+    def summary(self) -> dict[str, Any]:
+        """页面统计卡的后端口径：应收/已收/待收合计、待核对、争议、本月结算额。"""
+        return billing.summarize(store.rows(MODULE))
 
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         entry = store.find(MODULE, entry_id)

@@ -1,9 +1,10 @@
-"""作业结算接口：维护结算单，覆盖发起核对、确认结算、标记争议等动作。"""
+"""作业结算接口：维护结算单，覆盖试算、汇总、发起核对、确认结算、标记争议等动作。"""
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.schemas import ActionResult, EntryPayload, PageResult
 from app.services.settle import SettleService
@@ -14,6 +15,12 @@ service = SettleService()
 
 LIST_FIELDS = ["结算单号", "结算对象", "结算周期", "作业量", "应收金额", "已收金额", "开票状态", "结算状态"]
 STATUSES = ["待核对", "核对中", "已确认", "已收款", "有争议"]
+
+
+class TrialPayload(BaseModel):
+    """金额试算入参：一单计费所需的量价字段。"""
+
+    values: dict[str, Any]
 
 
 @router.get("", response_model=PageResult[dict])
@@ -28,6 +35,29 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+# 固定路径必须排在 /{entry_id} 前面，否则会被当成结算单 id 解析。
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出作业结算清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "settle", "total": total, "items": items}
+
+
+@router.get("/summary")
+def summary() -> dict[str, Any]:
+    """金额汇总：页面统计卡与试算核对共用的后端口径。"""
+    return service.summary()
+
+
+@router.post("/trial")
+def trial(payload: TrialPayload) -> ActionResult:
+    """金额试算固定入口：只按统一口径算，不读不写结算数据。"""
+    result, message = service.trial(payload.values)
+    if result is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message="试算完成", entry=result)
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +86,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出作业结算清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "settle", "total": total, "items": items}

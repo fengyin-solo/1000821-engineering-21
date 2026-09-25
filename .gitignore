@@ -85,3 +85,9 @@ desktop.ini
 *.db
 *.pid
 *.seed
+
+# 结算核对流水线的运行目录（日志/临时产物，成功时自动删除，失败时保留排查）
+.settle-check/
+
+# 精简镜像下没有 python3-venv 时，后端依赖安装到这个目标目录（同 .venv 性质）
+backend/.pydeps/

@@ -17,7 +17,6 @@
         <strong class="stat-value">{{ item.value }}</strong>
       </article>
     </div>
-
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -63,9 +62,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import { summarizeSettle, type SettleRow, type SettleSummary } from './billing'
 
 type Row = Record<string, string | number | null>
 
@@ -73,13 +73,27 @@ const ENDPOINT = '/api/settle'
 const columns = ["结算单号", "结算对象", "结算周期", "作业量", "应收金额", "已收金额", "开票状态", "结算状态"]
 const actions = ["发起核对", "确认结算", "标记争议"]
 const statuses = ["待核对", "核对中", "已确认", "已收款", "有争议"]
-const stats = [{"label": "待核对结算单", "value": 0}, {"label": "本月结算额", "value": 0}, {"label": "争议单数", "value": 0}]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+// 金额口径走前端的 summarizeSettle；该函数与后端 /api/settle/summary 同口径，
+// check-settle 流水线会逐字段对拍，口径漂移会被直接拦下。
+function formatMoney(value: number): string {
+  return `¥${value.toFixed(2)}`
+}
+
+const stats = computed(() => {
+  const summary: SettleSummary = summarizeSettle(rows.value as SettleRow[])
+  return [
+    { label: "待核对结算单", value: String(summary.待核对) },
+    { label: "本月结算额", value: formatMoney(summary.本月结算额) },
+    { label: "争议单数", value: String(summary.争议单数) },
+  ]
+})
 
 function resetFilters() {
   filters.value = {}
