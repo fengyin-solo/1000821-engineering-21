@@ -48,6 +48,18 @@ def create_entry(payload: EntryPayload) -> ActionResult:
     return ActionResult(ok=True, message="结算单已登记", entry=entry)
 
 
+@router.post("/trial", response_model=ActionResult)
+def trial_amount(payload: EntryPayload) -> ActionResult:
+    """金额试算的固定入口：只按服务层计费口径算一遍并返回费用拆分，不落库。
+
+    页面和脚本都走这里，口径不一致时以这里的结果为准。
+    """
+    detail, message = service.trial(payload.values)
+    if detail is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message="试算完成", entry=detail)
+
+
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     """对单条结算单执行发起核对、确认结算、标记争议；不允许的动作会被拦下并说明原因。"""
